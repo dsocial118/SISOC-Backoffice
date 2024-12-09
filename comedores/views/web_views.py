@@ -2,7 +2,7 @@ from typing import Any
 from django.contrib import messages
 from django.db.models.base import Model
 from django.forms import BaseModelForm
-from django.http import HttpResponse
+from django.http import HttpResponse,JsonResponse
 from django.shortcuts import redirect
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -12,9 +12,12 @@ from django.views.generic import (
     DetailView,
     ListView,
     UpdateView,
+    TemplateView,
+    View,
+    
 )
 
-from comedores.forms.comedor_form import ComedorForm, ReferenteForm
+from comedores.forms.comedor_form import ComedorForm, ReferenteForm,IntervencionForm
 from comedores.forms.observacion_form import ObservacionForm
 from comedores.forms.relevamiento_form import (
     ColaboradoresForm,
@@ -27,11 +30,94 @@ from comedores.forms.relevamiento_form import (
     PrestacionForm,
     RelevamientoForm,
 )
-from comedores.models import Comedor, Observacion, Prestacion, Relevamiento
+from comedores.models import Comedor, Observacion, Prestacion, Relevamiento, Intervencion,SubIntervencion
 from comedores.services.comedor_service import ComedorService
 from comedores.services.relevamiento_service import RelevamientoService
 from usuarios.models import Usuarios
 
+
+def SubEstadosIntervencionesAJax(request):
+    request_id = request.GET.get("id")
+    if request_id:
+        sub_estados = SubIntervencion.objects.filter(fk_subintervencion=request_id)
+    else:
+        sub_estados = SubIntervencion.objects.all()
+    
+    data = [
+        {"id": sub_estado.id, "text": sub_estado.nombre}
+        for sub_estado in sub_estados
+    ]
+    return JsonResponse(data, safe=False)
+
+class IntervencionDetail(TemplateView):
+    template_name = "comedor/intervencion_detail.html"
+    model = Intervencion
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        comedor = Comedor.objects.values(
+            "id","gestionar_uid", "nombre", "provincia", "barrio", "calle", "numero"
+        ).get(pk=self.kwargs["pk"])
+        intervenciones = Intervencion.objects.filter(fk_comedor=self.kwargs["pk"])
+        cantidad_intervenciones = Intervencion.objects.filter(
+            fk_comedor=self.kwargs["pk"]
+        ).count()
+        context["intervenciones"] = intervenciones
+        context["object"] = comedor
+        context["cantidad_intervenciones"] = cantidad_intervenciones
+
+        return context
+
+
+class IntervencionCreateView(CreateView):
+    model = Intervencion
+    template_name = "comedor/intervencion_form.html"
+    form_class = IntervencionForm
+
+    def form_valid(self, form):
+        pk = self.kwargs["pk"]
+        form.save()
+        return redirect("intervencion_ver", pk=pk)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        comedor = Comedor.objects.values(
+            "id","gestionar_uid", "nombre", "provincia", "barrio", "calle", "numero"
+        ).get(pk=self.kwargs["pk"])
+
+        context["form"] = self.get_form()
+        context["object"] = comedor
+
+        return context
+
+
+class IntervencionDeleteView(DeleteView):
+    model = Intervencion
+    template_name = "comedor/intervencion_confirm_delete.html"
+
+    def form_valid(self, form):
+        self.object.delete()
+        return redirect("intervencion_ver", pk=self.kwargs["pk2"])
+
+
+class IntervencionUpdateView(UpdateView):
+    model = Intervencion
+    form_class = IntervencionForm
+    template_name = "comedor/intervencion_form.html"
+
+    def form_valid(self, form):
+        pk = self.kwargs["pk2"]
+        form.save()
+        return redirect("intervencion_ver", pk=pk)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        comedor = Comedor.objects.values(
+            "id","gestionar_uid", "nombre", "provincia", "barrio", "calle", "numero"
+        ).get(pk=self.kwargs["pk2"])
+        context["form"] = self.get_form()
+        context["object"] = comedor
+        return context
 
 class ComedorListView(ListView):
     model = Comedor
